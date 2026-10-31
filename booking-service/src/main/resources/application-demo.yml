@@ -1,0 +1,12 @@
+# Профиль demo (включён по умолчанию): демо-данные и H2 Console по адресу /h2-console (JDBC URL jdbc:h2:mem:bookingdb).
+spring:
+  sql:
+    init:
+      data-locations: classpath:db/demo-data.sql
+  h2:
+    console:
+      enabled: true
+
+app:
+  security:
+    public-paths: /user/register,/user/auth,/h2-console/**

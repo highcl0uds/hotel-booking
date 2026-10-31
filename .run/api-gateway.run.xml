@@ -1,0 +1,9 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="api-gateway" type="Application" factoryName="Application">
+    <option name="MAIN_CLASS_NAME" value="ru.hotelbooking.gateway.ApiGatewayApplication" />
+    <module name="api-gateway" />
+    <method v="2">
+      <option name="Make" enabled="true" />
+    </method>
+  </configuration>
+</component>

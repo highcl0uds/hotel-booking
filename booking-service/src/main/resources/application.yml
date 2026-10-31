@@ -1,0 +1,117 @@
+server:
+  port: ${BOOKING_SERVICE_PORT:8081}
+  # Учитывать заголовки X-Forwarded-* от Gateway (правильные заголовки Location и адреса в Swagger за Gateway).
+  forward-headers-strategy: framework
+
+spring:
+  cloud:
+    loadbalancer:
+      cache:
+        ttl: 5s
+  application:
+    name: booking-service
+  profiles:
+    # Демо-данные загружаются, если другие профили не включены явно (тесты используют профиль test).
+    default: demo
+  datasource:
+    url: jdbc:h2:mem:bookingdb;DB_CLOSE_DELAY=-1;LOCK_TIMEOUT=10000
+    username: sa
+    password:
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:db/schema.sql
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+  mvc:
+    format:
+      date: iso
+  web:
+    # ответы API на одном языке: стандартные сообщения валидации тоже на английском, как и собственные, независимо от
+    # локали JVM и заголовка Accept-Language
+    locale: en
+    locale-resolver: fixed
+  data:
+    web:
+      pageable:
+        max-page-size: 100
+
+eureka:
+  client:
+    service-url:
+      defaultZone: ${EUREKA_URL:http://localhost:8761/eureka/}
+    # локальный запуск: замечать новые и остановленные экземпляры за секунды, а не за стандартные 30 с
+    registry-fetch-interval-seconds: 5
+  instance:
+    hostname: ${EUREKA_INSTANCE_HOSTNAME:localhost}
+    instance-id: ${spring.application.name}:${server.port}
+    lease-renewal-interval-in-seconds: 5
+    lease-expiration-duration-in-seconds: 15
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  tracing:
+    sampling:
+      probability: 1.0
+
+app:
+  security:
+    public-paths: /user/register,/user/auth
+    jwt:
+      secret: ${JWT_SECRET:dev-only-jwt-secret-change-me-0123456789abcdef}
+  openapi:
+    description: Users, authentication and bookings (saga with Hotel Service)
+  hotel-client:
+    base-url: http://hotel-service
+    connect-timeout: 1s
+    read-timeout: 2s
+  saga:
+    max-candidates: 20
+    pending-timeout: 1m
+    recovery-interval: PT30S
+
+# Устойчивость вызовов Hotel Service: каждая попытка ограничена read timeout выше; 3 попытки с экспоненциальной паузой
+# (200 мс, 400 мс) только при недоступности; circuit breaker сразу отказывает, пока ошибкой завершилась хотя бы половина
+# из последних 10 вызовов, и снова пробует через 10 с.
+resilience4j:
+  retry:
+    instances:
+      hotel-service:
+        max-attempts: 3
+        wait-duration: 200ms
+        enable-exponential-backoff: true
+        exponential-backoff-multiplier: 2
+        retry-exceptions:
+          - ru.hotelbooking.booking.client.HotelUnavailableException
+  circuitbreaker:
+    instances:
+      hotel-service:
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 10
+        minimum-number-of-calls: 5
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 10s
+        permitted-number-of-calls-in-half-open-state: 2
+        automatic-transition-from-open-to-half-open-enabled: true
+        record-exceptions:
+          - ru.hotelbooking.booking.client.HotelUnavailableException
+
+logging:
+  # консоль для чтения человеком + структурированный JSON (Elastic Common Schema) в logs/<service>.json:
+  # каждое событие содержит traceId/spanId (а во время саги и bookingId) отдельными полями
+  file:
+    name: ${LOG_DIR:logs}/${spring.application.name}.json
+  structured:
+    format:
+      file: ecs
+  pattern:
+    correlation: "[%X{traceId:-},%X{spanId:-}]%replace( bookingId=%X{bookingId}){'^ bookingId=$', ''} "
+  level:
+    # нарушение уникального ключа при параллельных дубликатах — штатная ветка идемпотентности, а не ошибка;
+    # SQL-ошибки, дошедшие до API, по-прежнему логирует GlobalExceptionHandler вместе с причиной
+    org.hibernate.engine.jdbc.spi.SqlExceptionHelper: off

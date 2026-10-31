@@ -1,0 +1,172 @@
+# Демонстрационный сценарий через API Gateway (IntelliJ IDEA HTTP Client, окружение "local").
+# Запускайте запросы по порядку: токены и id сохраняются в глобальные переменные.
+# Даты вычисляются относительно сегодняшнего дня и согласованы с демо-данными.
+
+### 1. Вход пользователя alice (USER)
+POST {{gateway}}/api/bookings/user/auth
+Content-Type: application/json
+
+{"username": "alice", "password": "alice123"}
+
+> {%
+    client.test("200 и токен", () => client.assert(response.status === 200 && response.body.accessToken));
+    client.global.set("aliceToken", response.body.accessToken);
+%}
+
+### 2. Вход администратора
+POST {{gateway}}/api/bookings/user/auth
+Content-Type: application/json
+
+{"username": "admin", "password": "admin123"}
+
+> {% client.global.set("adminToken", response.body.accessToken); %}
+
+### 3. Без токена Gateway отвечает 401 (ErrorDto)
+GET {{gateway}}/api/hotels
+
+### 4. Отели в Москве (фильтр, пагинация, сортировка)
+GET {{gateway}}/api/hotels?city=Moscow&sort=name,asc&size=10
+Authorization: Bearer {{aliceToken}}
+
+### 5. Рекомендованные номера отеля 1 на +10..+12 дней: по возрастанию times_booked, затем id.
+#    Номера 101 и 102 заняты демо-бронями, 105 на ремонте.
+< {%
+    const day = (n) => { const d = new Date(); d.setDate(d.getDate() + n); return d.toISOString().substring(0, 10); };
+    request.variables.set("start", day(10));
+    request.variables.set("end", day(12));
+%}
+GET {{gateway}}/api/rooms/recommend?hotelId=1&startDate={{start}}&endDate={{end}}
+Authorization: Bearer {{aliceToken}}
+
+### 6. Бронирование с автоподбором (сага PENDING -> CONFIRMED): 201
+< {%
+    const day = (n) => { const d = new Date(); d.setDate(d.getDate() + n); return d.toISOString().substring(0, 10); };
+    request.variables.set("start", day(10));
+    request.variables.set("end", day(12));
+%}
+POST {{gateway}}/api/bookings/booking
+Authorization: Bearer {{aliceToken}}
+Content-Type: application/json
+
+{
+  "requestId": "11111111-2222-3333-4444-555555555555",
+  "autoSelect": true,
+  "hotelId": 1,
+  "startDate": "{{start}}",
+  "endDate": "{{end}}"
+}
+
+> {% client.global.set("bookingId", response.body.id); %}
+
+### 7. Повтор того же запроса (тот же requestId): 200 и та же бронь, дубликата нет
+< {%
+    const day = (n) => { const d = new Date(); d.setDate(d.getDate() + n); return d.toISOString().substring(0, 10); };
+    request.variables.set("start", day(10));
+    request.variables.set("end", day(12));
+%}
+POST {{gateway}}/api/bookings/booking
+Authorization: Bearer {{aliceToken}}
+Content-Type: application/json
+
+{
+  "requestId": "11111111-2222-3333-4444-555555555555",
+  "autoSelect": true,
+  "hotelId": 1,
+  "startDate": "{{start}}",
+  "endDate": "{{end}}"
+}
+
+### 8. Номер 101 (id 1) уже занят на эти даты: 409 ROOM_ALREADY_BOOKED, бронь отменена
+< {%
+    const day = (n) => { const d = new Date(); d.setDate(d.getDate() + n); return d.toISOString().substring(0, 10); };
+    request.variables.set("start", day(11));
+    request.variables.set("end", day(12));
+%}
+POST {{gateway}}/api/bookings/booking
+Authorization: Bearer {{aliceToken}}
+Content-Type: application/json
+
+{
+  "requestId": "22222222-3333-4444-5555-666666666666",
+  "autoSelect": false,
+  "roomId": 1,
+  "startDate": "{{start}}",
+  "endDate": "{{end}}"
+}
+
+### 9. Ошибка валидации дат: 400 VALIDATION_FAILED
+POST {{gateway}}/api/bookings/booking
+Authorization: Bearer {{aliceToken}}
+Content-Type: application/json
+
+{
+  "requestId": "33333333-4444-5555-6666-777777777777",
+  "autoSelect": false,
+  "roomId": 3,
+  "startDate": "2030-01-12",
+  "endDate": "2030-01-10"
+}
+
+### 10. История своих броней (новые первыми, пагинация, фильтр по статусу)
+GET {{gateway}}/api/bookings/bookings?page=0&size=5
+Authorization: Bearer {{aliceToken}}
+
+### 11. Бронь с историей переходов статусов
+GET {{gateway}}/api/bookings/booking/{{bookingId}}
+Authorization: Bearer {{aliceToken}}
+
+### 12. Чужая бронь (бронь 2 принадлежит bob): 403 ACCESS_DENIED
+GET {{gateway}}/api/bookings/booking/2
+Authorization: Bearer {{aliceToken}}
+
+### 13. Отмена брони: 204, слот освобождается в Hotel Service
+DELETE {{gateway}}/api/bookings/booking/{{bookingId}}
+Authorization: Bearer {{aliceToken}}
+
+### 14. Внутренний шаг саги через Gateway недоступен: 404
+POST {{gateway}}/api/rooms/1/confirm-availability
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{}
+
+### 15. USER не может добавлять отели: 403
+POST {{gateway}}/api/hotels
+Authorization: Bearer {{aliceToken}}
+Content-Type: application/json
+
+{"name": "Test", "city": "Kazan", "address": "Street, 1", "stars": 3}
+
+### 16. ADMIN: равномерность загрузки по отелям (min/max/avg times_booked, разброс, простаивающие)
+GET {{gateway}}/api/hotels/stats
+Authorization: Bearer {{adminToken}}
+
+### 17. ADMIN: загрузка отеля 1 на ближайшие 30 дней (по номерам и по дням)
+< {%
+    const day = (n) => { const d = new Date(); d.setDate(d.getDate() + n); return d.toISOString().substring(0, 10); };
+    request.variables.set("from", day(0));
+    request.variables.set("to", day(30));
+%}
+GET {{gateway}}/api/hotels/1/occupancy?from={{from}}&to={{to}}
+Authorization: Bearer {{adminToken}}
+
+### 18. ADMIN: счётчики номеров, самые загруженные первыми
+GET {{gateway}}/api/rooms/stats?sort=timesBooked,desc
+Authorization: Bearer {{adminToken}}
+
+### 19. ADMIN: создание пользователя
+POST {{gateway}}/api/bookings/user
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{"username": "manager", "password": "manager123", "role": "ADMIN"}
+
+### 20. Регистрация нового пользователя (роль USER, токен на 1 час)
+POST {{gateway}}/api/bookings/user/register
+Content-Type: application/json
+
+{"username": "carol", "password": "carol123"}
+
+### 21. H2 Console Booking Service через Gateway не публикуется: 404 даже с токеном
+GET {{gateway}}/api/bookings/h2-console/
+Authorization: Bearer {{aliceToken}}

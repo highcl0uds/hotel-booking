@@ -1,0 +1,9 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="eureka-server" type="Application" factoryName="Application">
+    <option name="MAIN_CLASS_NAME" value="ru.hotelbooking.eureka.EurekaServerApplication" />
+    <module name="eureka-server" />
+    <method v="2">
+      <option name="Make" enabled="true" />
+    </method>
+  </configuration>
+</component>

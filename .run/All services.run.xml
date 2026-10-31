@@ -1,0 +1,9 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="All services" type="CompoundRunConfigurationType">
+    <toRun name="eureka-server" type="Application" />
+    <toRun name="hotel-service" type="Application" />
+    <toRun name="booking-service" type="Application" />
+    <toRun name="api-gateway" type="Application" />
+    <method v="2" />
+  </configuration>
+</component>

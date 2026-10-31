@@ -1,0 +1,89 @@
+server:
+  port: ${GATEWAY_PORT:8080}
+
+spring:
+  application:
+    name: api-gateway
+  reactor:
+    # Восстанавливает контекст трассировки в реактивных операторах, чтобы строки логов Gateway содержали traceId/spanId.
+    context-propagation: auto
+  cloud:
+    loadbalancer:
+      cache:
+        ttl: 5s
+    gateway:
+      server:
+        webflux:
+          # Заголовки X-Forwarded-* передаются только для запросов с этих адресов (по умолчанию локальные клиенты). По
+          # ним сервисы строят правильные заголовки Location и адреса серверов в Swagger за Gateway.
+          trusted-proxies: ${GATEWAY_TRUSTED_PROXIES:127\.0\.0\.1|0:0:0:0:0:0:0:1}
+          httpclient:
+            # сервис, который не принял соединение или не ответил вовремя, даёт 503 / 504 (GatewayErrorHandler), а не
+            # зависший клиент; response timeout больше самой долгой саги при зависшем Hotel Service: удержание слота и
+            # компенсирующий release, каждый до 3 попыток по 2 с read timeout плюс паузы между ними
+            connect-timeout: 2000
+            response-timeout: 15s
+          default-filters:
+            # заголовок корреляции саги ставит только Booking Service; клиент не должен подмешивать его в логи
+            - RemoveRequestHeader=X-Booking-Id
+          routes:
+            # Booking Service сохраняет пути эндпойнтов из ТЗ (/user, /booking, /bookings): публичный префикс
+            # /api/bookings отрезается перед пересылкой.
+            - id: booking-service
+              uri: lb://booking-service
+              predicates:
+                - Path=/api/bookings/**
+              filters:
+                - StripPrefix=2
+            # Hotel Service и так обслуживает /api/hotels/** и /api/rooms/**; внутренние эндпойнты номеров
+            # (confirm-availability, release) отклоняет InternalEndpointsFilter до маршрутизации.
+            - id: hotel-service
+              uri: lb://hotel-service
+              predicates:
+                - Path=/api/hotels/**,/api/rooms/**
+
+eureka:
+  client:
+    service-url:
+      defaultZone: ${EUREKA_URL:http://localhost:8761/eureka/}
+    # локальный запуск: замечать новые и остановленные экземпляры за секунды, а не за стандартные 30 с
+    registry-fetch-interval-seconds: 5
+  instance:
+    hostname: ${EUREKA_INSTANCE_HOSTNAME:localhost}
+    instance-id: ${spring.application.name}:${server.port}
+    lease-renewal-interval-in-seconds: 5
+    lease-expiration-duration-in-seconds: 15
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  tracing:
+    sampling:
+      probability: 1.0
+
+app:
+  security:
+    jwt:
+      secret: ${JWT_SECRET:dev-only-jwt-secret-change-me-0123456789abcdef}
+
+# Один Swagger UI на всю систему: http://localhost:8080/swagger-ui.html (выбор сервиса вверху страницы).
+springdoc:
+  swagger-ui:
+    urls:
+      - name: booking-service
+        url: /api/bookings/v3/api-docs
+      - name: hotel-service
+        url: /api/hotels/v3/api-docs
+
+logging:
+  # консоль для чтения человеком + структурированный JSON (Elastic Common Schema) в logs/<service>.json:
+  # каждое событие содержит traceId/spanId (а во время саги и bookingId) отдельными полями
+  file:
+    name: ${LOG_DIR:logs}/${spring.application.name}.json
+  structured:
+    format:
+      file: ecs
+  pattern:
+    correlation: "[%X{traceId:-},%X{spanId:-}] "

@@ -1,0 +1,9 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="hotel-service" type="Application" factoryName="Application">
+    <option name="MAIN_CLASS_NAME" value="ru.hotelbooking.hotel.HotelServiceApplication" />
+    <module name="hotel-service" />
+    <method v="2">
+      <option name="Make" enabled="true" />
+    </method>
+  </configuration>
+</component>

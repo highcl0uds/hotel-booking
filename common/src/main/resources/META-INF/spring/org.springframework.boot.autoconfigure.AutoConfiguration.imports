@@ -1,0 +1,4 @@
+ru.hotelbooking.common.autoconfigure.CommonAutoConfiguration
+ru.hotelbooking.common.autoconfigure.ServletWebAutoConfiguration
+ru.hotelbooking.common.autoconfigure.ServletSecurityAutoConfiguration
+ru.hotelbooking.common.autoconfigure.OpenApiAutoConfiguration

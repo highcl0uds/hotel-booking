@@ -1,0 +1,25 @@
+spring:
+  cloud:
+    loadbalancer:
+      cache:
+        enabled: false
+    gateway:
+      server:
+        webflux:
+          httpclient:
+            # короткий, чтобы тест тайм-аута не ждал боевое значение
+            response-timeout: 1s
+
+eureka:
+  client:
+    enabled: false
+
+app:
+  security:
+    jwt:
+      secret: test-only-jwt-secret-0123456789-0123456789-abcdef
+
+logging:
+  file:
+    # без файлов логов в тестах
+    name: ""

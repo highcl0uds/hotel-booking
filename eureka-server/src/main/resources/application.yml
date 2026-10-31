@@ -1,0 +1,20 @@
+server:
+  port: ${EUREKA_PORT:8761}
+
+spring:
+  application:
+    name: eureka-server
+
+eureka:
+  instance:
+    hostname: ${EUREKA_HOSTNAME:localhost}
+  client:
+    # Реестр не регистрирует сам себя и не забирает реестр у соседних узлов.
+    register-with-eureka: false
+    fetch-registry: false
+    service-url:
+      defaultZone: http://${eureka.instance.hostname}:${server.port}/eureka/
+  server:
+    # Локальная разработка: быстро удалять экземпляры остановленных сервисов вместо защиты реестра.
+    enable-self-preservation: false
+    eviction-interval-timer-in-ms: 5000

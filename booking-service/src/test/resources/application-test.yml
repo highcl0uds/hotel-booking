@@ -1,0 +1,40 @@
+spring:
+  datasource:
+    # своя база на каждый Spring-контекст, чтобы закешированные контексты не делили таблицы
+    url: jdbc:h2:mem:booking-test-${random.uuid};DB_CLOSE_DELAY=-1;LOCK_TIMEOUT=10000
+  cloud:
+    loadbalancer:
+      cache:
+        enabled: false
+
+eureka:
+  client:
+    enabled: false
+
+app:
+  scheduling:
+    # фоновую задачу восстановления тесты вызывают явно
+    enabled: false
+  security:
+    jwt:
+      secret: test-only-jwt-secret-0123456789-0123456789-abcdef
+  hotel-client:
+    connect-timeout: 500ms
+    read-timeout: 300ms
+
+resilience4j:
+  retry:
+    instances:
+      hotel-service:
+        wait-duration: 10ms
+  circuitbreaker:
+    instances:
+      hotel-service:
+        sliding-window-size: 6
+        minimum-number-of-calls: 6
+        wait-duration-in-open-state: 60s
+
+logging:
+  file:
+    # без файлов логов в тестах
+    name: ""

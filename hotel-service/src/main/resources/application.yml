@@ -1,0 +1,80 @@
+server:
+  port: ${HOTEL_SERVICE_PORT:8082}
+  # Учитывать заголовки X-Forwarded-* от Gateway (правильные адреса в Swagger UI за Gateway).
+  forward-headers-strategy: framework
+
+spring:
+  application:
+    name: hotel-service
+  profiles:
+    # Демо-данные загружаются, если другие профили не включены явно (тесты используют профиль test).
+    default: demo
+  datasource:
+    url: jdbc:h2:mem:hoteldb;DB_CLOSE_DELAY=-1;LOCK_TIMEOUT=10000
+    username: sa
+    password:
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:db/schema.sql
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+  mvc:
+    format:
+      date: iso
+  web:
+    # ответы API на одном языке: стандартные сообщения валидации тоже на английском, как и собственные, независимо от
+    # локали JVM и заголовка Accept-Language
+    locale: en
+    locale-resolver: fixed
+  data:
+    web:
+      pageable:
+        max-page-size: 200
+
+eureka:
+  client:
+    service-url:
+      defaultZone: ${EUREKA_URL:http://localhost:8761/eureka/}
+    # локальный запуск: замечать новые и остановленные экземпляры за секунды, а не за стандартные 30 с
+    registry-fetch-interval-seconds: 5
+  instance:
+    hostname: ${EUREKA_INSTANCE_HOSTNAME:localhost}
+    instance-id: ${spring.application.name}:${server.port}
+    lease-renewal-interval-in-seconds: 5
+    lease-expiration-duration-in-seconds: 15
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  tracing:
+    sampling:
+      probability: 1.0
+
+app:
+  security:
+    # документ OpenAPI лежит под /api/hotels, чтобы маршрут Gateway публиковал его без изменений
+    public-paths: /api/hotels/v3/api-docs/**
+    jwt:
+      secret: ${JWT_SECRET:dev-only-jwt-secret-change-me-0123456789abcdef}
+  openapi:
+    description: Hotels, rooms, room slot reservations and occupancy analytics
+
+springdoc:
+  api-docs:
+    path: /api/hotels/v3/api-docs
+
+logging:
+  # консоль для чтения человеком + структурированный JSON (Elastic Common Schema) в logs/<service>.json:
+  # каждое событие содержит traceId/spanId (а во время саги и bookingId) отдельными полями
+  file:
+    name: ${LOG_DIR:logs}/${spring.application.name}.json
+  structured:
+    format:
+      file: ecs
+  pattern:
+    correlation: "[%X{traceId:-},%X{spanId:-}]%replace( bookingId=%X{bookingId}){'^ bookingId=$', ''} "
